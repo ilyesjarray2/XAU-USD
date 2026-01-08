@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NEYDRA | GOLD INTELLIGENCE</title>
+    <style>
+        :root {
+            --neon-green: #39FF14;
+            --neon-red: #FF0039;
+            --bg-black: #050505;
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+        body {
+            background-color: var(--bg-black);
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        h1 { text-shadow: 0 0 10px var(--neon-green); letter-spacing: 5px; }
+        
+        /* THE SCAN BUTTON */
+        #scan-btn {
+            background: transparent;
+            border: 2px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 20px 40px;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 0 15px var(--neon-green);
+            transition: 0.3s;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        #scan-btn:hover { background: var(--neon-green); color: black; box-shadow: 0 0 30px var(--neon-green); }
+        
+        /* LOADER */
+        .loader {
+            border: 8px solid #333;
+            border-top: 8px solid var(--neon-green);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* RESULT BOX */
+        #result-area {
+            display: none;
+            background: var(--glass);
+            padding: 30px;
+            border: 1px solid #333;
+            margin-top: 20px;
+            text-align: center;
+            width: 300px;
+            backdrop-filter: blur(5px);
+        }
+        .signal-buy { color: var(--neon-green); text-shadow: 0 0 10px var(--neon-green); font-size: 30px; font-weight: bold;}
+        .signal-sell { color: var(--neon-red); text-shadow: 0 0 10px var(--neon-red); font-size: 30px; font-weight: bold;}
+        
+        .details { margin-top: 15px; font-size: 14px; color: #ccc; text-align: left; }
+        .data-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+
+        #exec-btn {
+            margin-top: 20px;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>NEYDRA</h1>
+    <div style="font-size: 10px; color: #555; margin-bottom: 30px;">QUANTITATIVE GOLD ANALYZER</div>
+
+    <button id="scan-btn" onclick="startScan()">SCAN XAU/USD</button>
+    <div class="loader" id="loader"></div>
+
+    <div id="result-area">
+        <div id="signal-text"></div>
+        <div class="details">
+            <div class="data-row"><span>CONFIDENCE:</span> <span id="conf-val"></span></div>
+            <div class="data-row"><span>ENTRY:</span> <span id="price-val"></span></div>
+            <div class="data-row"><span>LOT (14.37%):</span> <span id="lot-val"></span></div>
+            <div class="data-row"><span>TP / SL:</span> <span id="tpsl-val"></span></div>
+        </div>
+        <button id="exec-btn" onclick="executeTrade()">EXECUTE NOW</button>
+        <div id="status-msg" style="margin-top:10px; font-size:10px;"></div>
+    </div>
+
+    <script>
+        let currentSignal = {};
+
+        async function startScan() {
+            document.getElementById('scan-btn').style.display = 'none';
+            document.getElementById('result-area').style.display = 'none';
+            document.getElementById('loader').style.display = 'block';
+
+            // Simulate the 3-second Deep Analysis
+            setTimeout(async () => {
+                try {
+                    const response = await fetch('http://localhost:8000/scan');
+                    const data = await response.json();
+                    currentSignal = data;
+                    showResult(data);
+                } catch (error) {
+                    alert("NEYDRA SERVER OFFLINE");
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('scan-btn').style.display = 'block';
+                }
+            }, 3000); 
+        }
+
+        function showResult(data) {
+            document.getElementById('loader').style.display = 'none';
+            const resArea = document.getElementById('result-area');
+            const sigText = document.getElementById('signal-text');
+            const execBtn = document.getElementById('exec-btn');
+
+            resArea.style.display = 'block';
+            
+            if (data.action === "BUY") {
+                sigText.className = "signal-buy";
+                sigText.innerText = "BUY SIGNAL";
+                execBtn.style.backgroundColor = "var(--neon-green)";
+                execBtn.style.color = "black";
+            } else {
+                sigText.className = "signal-sell";
+                sigText.innerText = "SELL SIGNAL";
+                execBtn.style.backgroundColor = "var(--neon-red)";
+                execBtn.style.color = "white";
+            }
+
+            document.getElementById('conf-val').innerText = data.confidence + "%";
+            document.getElementById('price-val').innerText = data.entry_price;
+            document.getElementById('lot-val').innerText = data.lot_size;
+            document.getElementById('tpsl-val').innerText = "+" + data.tp + " / -" + data.sl + " pips";
+            
+            execBtn.style.display = 'block';
+        }
+
+        async function executeTrade() {
+            document.getElementById('status-msg').innerText = "SENDING ORDER TO MT5...";
+            const url = `http://localhost:8000/execute?action=${currentSignal.action}&lot=${currentSignal.lot_size}`;
+            
+            try {
+                const response = await fetch(url, {method: 'POST'});
+                const res = await response.json();
+                if(res.status === "EXECUTED") {
+                    document.getElementById('status-msg').innerText = "SUCCESS: TICKET #" + res.ticket;
+                    document.getElementById('status-msg').style.color = "var(--neon-green)";
+                } else {
+                    document.getElementById('status-msg').innerText = "ERROR: " + res.error;
+                    document.getElementById('status-msg').style.color = "red";
+                }
+            } catch (e) {
+                document.getElementById('status-msg').innerText = "CONNECTION FAILED";
+            }
+        }
+    </script>
+</body>
+</html>
