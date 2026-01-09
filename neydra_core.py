@@ -1,145 +1,169 @@
 import MetaTrader5 as mt5
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
-import random
+import requests
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- NEYDRA CONFIGURATION ---
-RISK_FACTOR_1437 = 0.1437  # 14.37% Strategy
 SYMBOL = "XAUUSD"
-SCALPING_TP_PIPS = 15
-SCALPING_SL_PIPS = 10  # Tight Stop for Scalping
-TIMEFRAME = mt5.TIMEFRAME_M1
+RISK_FACTOR = 0.1437
+MAGIC_NUMBER = 1437001
+SCALPING_TP = 15
+SCALPING_SL = 10
 
-app = FastAPI(title="NEYDRA CORE V1")
+# --- MYFXBOOK CREDENTIALS ---
+MFB_EMAIL = "jarrayilyes18@gmail.com"     # ضع إيميلك هنا
+MFB_PASS = "mQcwv94dEJ@PbiK"               # ضع كلمة السر هنا
+MFB_ACC_ID = "980046"                    # رقم حسابك في Myfxbook (Account ID)
 
-# --- CORS (Allow HTML Dashboard Connection) ---
+class MyfxbookBridge:
+    def __init__(self):
+        self.base_url = "https://www.myfxbook.com/api"
+        self.session = None
+        self.last_login = 0
+    
+    def login(self):
+        # تجديد الجلسة كل 10 دقائق لضمان عدم انقطاع الاتصال
+        if self.session and (time.time() - self.last_login < 600):
+            return self.session
+        try:
+            url = f"{self.base_url}/login.json?email={MFB_EMAIL}&password={MFB_PASS}"
+            resp = requests.get(url).json()
+            if not resp['error']:
+                self.session = resp['session']
+                self.last_login = time.time()
+                print(f"✅ MFB Session Active: {self.session}")
+                return self.session
+        except Exception as e:
+            print(f"❌ MFB Login Error: {e}")
+        return None
+
+    def get_all_data(self):
+        s = self.login()
+        if not s: return {"error": "No Session"}
+        
+        # تواريخ ديناميكية (آخر 30 يوم)
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+        data = {}
+
+        # 1. Sentiment (Global & Country)
+        try:
+            sent = requests.get(f"{self.base_url}/get-community-sentiment.json?session={s}").json()
+            # البحث عن الذهب
+            xau_sent = next((item for item in sent.get('symbols', []) if item['name'] == 'XAUUSD'), None)
+            data['sentiment_global'] = xau_sent
+            
+            # Sentiment by Country (مثال لزوج EURUSD أو XAUUSD حسب التوفر)
+            country = requests.get(f"{self.base_url}/get-community-outlook-by-country.json?session={s}&symbol={SYMBOL}").json()
+            data['sentiment_country'] = country.get('countries', [])
+        except: data['sentiment_error'] = True
+
+        # 2. Account Performance (Gain, Daily Gain, Data Daily)
+        try:
+            # Gain
+            gain = requests.get(f"{self.base_url}/get-gain.json?session={s}&id={MFB_ACC_ID}&start={start_date}&end={end_date}").json()
+            data['gain_period'] = gain.get('value', 0)
+
+            # Daily Gain Chart Data
+            daily_gain = requests.get(f"{self.base_url}/get-daily-gain.json?session={s}&id={MFB_ACC_ID}&start={start_date}&end={end_date}").json()
+            data['daily_gain_chart'] = daily_gain.get('dailyGain', [])
+
+            # Detailed Daily Data
+            daily_data = requests.get(f"{self.base_url}/get-data-daily.json?session={s}&id={MFB_ACC_ID}&start={start_date}&end={end_date}").json()
+            data['data_daily'] = daily_data.get('dataDaily', [])
+        except: data['perf_error'] = True
+
+        # 3. Trades & Orders (Live & History)
+        try:
+            open_trades = requests.get(f"{self.base_url}/get-open-trades.json?session={s}&id={MFB_ACC_ID}").json()
+            data['open_trades'] = open_trades.get('openTrades', [])
+
+            open_orders = requests.get(f"{self.base_url}/get-open-orders.json?session={s}&id={MFB_ACC_ID}").json()
+            data['open_orders'] = open_orders.get('openOrders', [])
+
+            history = requests.get(f"{self.base_url}/get-history.json?session={s}&id={MFB_ACC_ID}").json()
+            data['history'] = history.get('history', [])
+        except: data['trade_error'] = True
+        
+        # 4. Widget URL Construction (No API call needed, just URL generation)
+        # Custom Widget Parameters: Dark theme style
+        widget_url = f"https://widgets.myfxbook.com/api/get-custom-widget.png?session={s}&id={MFB_ACC_ID}&width=350&height=200&bart=1&linet=0&bgColor=050505&gridColor=333333&lineColor=39FF14&barColor=FF0039&fontColor=FFFFFF&title=NEYDRA&titles=14&chartbgc=101010"
+        data['widget_url'] = widget_url
+
+        return data
+
+# --- FASTAPI SETUP ---
+app = FastAPI(title="NEYDRA SYSTEM V4")
+mfb = MyfxbookBridge()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- INITIALIZATION ---
-if not mt5.initialize():
-    print("initialize() failed, error code =", mt5.last_error())
-    quit()
-
-# Ensure Symbol is visible
+if not mt5.initialize(): print("MT5 Init Failed")
 mt5.symbol_select(SYMBOL, True)
 
-# --- 14.37% RISK MANAGEMENT LOGIC ---
-def calculate_lot_size(balance):
-    """
-    Applies the 14.37% Strategy.
-    In this MVP: We risk 14.37% of equity on the Stop Loss hit.
-    Formula: Risk Amount / (SL_Points * TickValue)
-    """
-    risk_amount = balance * RISK_FACTOR_1437
-    symbol_info = mt5.symbol_info(SYMBOL)
-    if not symbol_info:
-        return 0.01
-    
-    sl_points = SCALPING_SL_PIPS * 10  # Convert pips to points
-    tick_value = symbol_info.trade_tick_value
-    
-    if tick_value == 0:
-        return 0.01
-
-    lot_size = risk_amount / (sl_points * tick_value)
-    
-    # Normalize lot size
-    step = symbol_info.volume_step
-    lot_size = round(lot_size / step) * step
-    return max(lot_size, 0.01) # Minimum 0.01
-
-# --- AI & ORDER FLOW SIMULATION ---
-def predict_price_action():
-    """
-    Simulates the deep analysis of Order Flow and L2 Data.
-    In Production: This connects to the LSTM Model weights.
-    In MVP: We simulate High-Probability Order Block detection.
-    """
-    # Simulate processing time (handled by frontend delay, but backend logic here)
-    
-    # Mocking Order Book Imbalance
-    buy_pressure = random.uniform(0.4, 0.95)
-    sell_pressure = 1 - buy_pressure
-    
-    direction = "BUY" if buy_pressure > 0.5 else "SELL"
-    confidence = random.uniform(85.0, 96.5) # High confidence simulation
-    
-    return {
-        "direction": direction,
-        "confidence": round(confidence, 2),
-        "pressure": round(buy_pressure * 100, 2) if direction == "BUY" else round(sell_pressure * 100, 2),
-        "timestamp": datetime.now().strftime("%H:%M:%S")
-    }
-
-# --- API ENDPOINTS ---
+# --- ENDPOINTS ---
 
 @app.get("/scan")
 async def scan_market():
-    """The 'Brain' analyzing the market."""
-    account_info = mt5.account_info()
-    if not account_info:
-        raise HTTPException(status_code=500, detail="MT5 Account not found")
+    # Local Scalping Logic (Fast)
+    mt5.market_book_add(SYMBOL)
+    time.sleep(0.2)
+    items = mt5.market_book_get(SYMBOL)
+    mt5.market_book_release(SYMBOL)
     
-    prediction = predict_price_action()
-    current_price = mt5.symbol_info_tick(SYMBOL).ask if prediction['direction'] == "BUY" else mt5.symbol_info_tick(SYMBOL).bid
-    
-    lot_size = calculate_lot_size(account_info.balance)
+    direction = "WAIT"
+    imbalance = 0
+    if items:
+        bid = sum(i.volume for i in items if i.type in [mt5.BOOK_TYPE_BUY, mt5.BOOK_TYPE_BUY_MARKET])
+        ask = sum(i.volume for i in items if i.type in [mt5.BOOK_TYPE_SELL, mt5.BOOK_TYPE_SELL_MARKET])
+        total = bid + ask
+        if total > 0: imbalance = (bid - ask) / total
+        if imbalance > 0.05: direction = "BUY"
+        elif imbalance < -0.05: direction = "SELL"
+
+    acc = mt5.account_info()
+    lot = round((acc.balance * RISK_FACTOR / 100) * 0.1, 2)
     
     return {
-        "status": "OPPORTUNITY_FOUND",
-        "symbol": SYMBOL,
-        "action": prediction['direction'], # BUY or SELL
-        "confidence": prediction['confidence'],
-        "entry_price": current_price,
-        "lot_size": lot_size,
-        "tp": SCALPING_TP_PIPS,
-        "sl": SCALPING_SL_PIPS,
-        "reason": "Institutional Order Block Detected via L2 Data"
+        "action": direction,
+        "confidence": round(abs(imbalance)*100+60, 2),
+        "lot_size": max(lot, 0.01),
+        "price": mt5.symbol_info_tick(SYMBOL).ask if direction == "BUY" else mt5.symbol_info_tick(SYMBOL).bid
     }
 
-@app.post("/execute")
+@app.get("/execute")
 async def execute_trade(action: str, lot: float):
-    """Executes the trade instantly on MT5."""
     tick = mt5.symbol_info_tick(SYMBOL)
-    order_type = mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL
+    sym = mt5.symbol_info(SYMBOL)
     price = tick.ask if action == "BUY" else tick.bid
+    sl = price - (SCALPING_SL * 10 * sym.point) if action == "BUY" else price + (SCALPING_SL * 10 * sym.point)
+    tp = price + (SCALPING_TP * 10 * sym.point) if action == "BUY" else price - (SCALPING_TP * 10 * sym.point)
     
-    point = mt5.symbol_info(SYMBOL).point
-    sl = price - (SCALPING_SL_PIPS * 10 * point) if action == "BUY" else price + (SCALPING_SL_PIPS * 10 * point)
-    tp = price + (SCALPING_TP_PIPS * 10 * point) if action == "BUY" else price - (SCALPING_TP_PIPS * 10 * point)
-
-    request = {
+    req = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": SYMBOL,
         "volume": lot,
-        "type": order_type,
-        "price": price,
-        "sl": sl,
-        "tp": tp,
-        "deviation": 10,
-        "magic": 1437001,
-        "comment": "NEYDRA AI EXECUTION",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type": mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL,
+        "price": price, "sl": sl, "tp": tp, "magic": MAGIC_NUMBER,
+        "comment": "NEYDRA V4", "type_filling": mt5.ORDER_FILLING_IOC
     }
-    
-    result = mt5.order_send(request)
-    if result.retcode != mt5.TRADE_RETCODE_DONE:
-        return {"status": "FAILED", "error": result.comment}
-    
-    return {"status": "EXECUTED", "ticket": result.order}
+    res = mt5.order_send(req)
+    return {"status": "DONE" if res.retcode == mt5.TRADE_RETCODE_DONE else "FAIL", "ticket": res.order}
+
+@app.get("/mfb-data")
+async def get_myfxbook_stats():
+    # Global Intelligence Logic (Slower, rich data)
+    return mfb.get_all_data()
 
 if __name__ == "__main__":
-    print("NEYDRA BRAIN ENGINE STARTED...")
-    print("LISTENING ON PORT 8000")
     uvicorn.run(app, host="127.0.0.1", port=8000)
+    
