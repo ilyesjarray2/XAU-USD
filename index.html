@@ -2,174 +2,205 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NEYDRA | GOLD INTELLIGENCE</title>
+    <title>NEYDRA | OMNI-CHANNEL TERMINAL</title>
     <style>
-        :root {
-            --neon-green: #39FF14;
-            --neon-red: #FF0039;
-            --bg-black: #050505;
-            --glass: rgba(255, 255, 255, 0.05);
-        }
-        body {
-            background-color: var(--bg-black);
-            color: white;
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
-        h1 { text-shadow: 0 0 10px var(--neon-green); letter-spacing: 5px; }
+        :root { --neon: #39FF14; --red: #FF0039; --bg: #050505; --panel: #0a0a0a; --border: #333; }
+        body { background: var(--bg); color: #fff; font-family: 'Consolas', monospace; margin: 0; display: flex; height: 100vh; overflow: hidden; }
         
-        /* THE SCAN BUTTON */
-        #scan-btn {
-            background: transparent;
-            border: 2px solid var(--neon-green);
-            color: var(--neon-green);
-            padding: 20px 40px;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 0 15px var(--neon-green);
-            transition: 0.3s;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-        #scan-btn:hover { background: var(--neon-green); color: black; box-shadow: 0 0 30px var(--neon-green); }
-        
-        /* LOADER */
-        .loader {
-            border: 8px solid #333;
-            border-top: 8px solid var(--neon-green);
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            display: none;
-            margin: 20px;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* SIDEBAR */
+        .sidebar { width: 250px; background: #000; border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; }
+        .logo { font-size: 24px; color: var(--neon); letter-spacing: 5px; margin-bottom: 40px; text-shadow: 0 0 10px var(--neon); }
+        .menu-item { padding: 15px; cursor: pointer; color: #666; transition: 0.3s; }
+        .menu-item:hover, .menu-item.active { color: #fff; background: rgba(57, 255, 20, 0.1); border-left: 3px solid var(--neon); }
 
-        /* RESULT BOX */
-        #result-area {
-            display: none;
-            background: var(--glass);
-            padding: 30px;
-            border: 1px solid #333;
-            margin-top: 20px;
-            text-align: center;
-            width: 300px;
-            backdrop-filter: blur(5px);
-        }
-        .signal-buy { color: var(--neon-green); text-shadow: 0 0 10px var(--neon-green); font-size: 30px; font-weight: bold;}
-        .signal-sell { color: var(--neon-red); text-shadow: 0 0 10px var(--neon-red); font-size: 30px; font-weight: bold;}
+        /* MAIN CONTENT */
+        .main { flex: 1; padding: 20px; overflow-y: auto; display: grid; grid-template-rows: auto 1fr; gap: 20px; }
         
-        .details { margin-top: 15px; font-size: 14px; color: #ccc; text-align: left; }
-        .data-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        /* TOP STATS */
+        .top-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .card { background: var(--panel); border: 1px solid var(--border); padding: 15px; border-radius: 5px; }
+        .card h3 { margin: 0 0 10px 0; font-size: 12px; color: #888; }
+        .card .val { font-size: 20px; font-weight: bold; }
 
-        #exec-btn {
-            margin-top: 20px;
-            width: 100%;
-            padding: 10px;
-            border: none;
-            font-weight: bold;
-            cursor: pointer;
-            display: none;
-        }
+        /* EXECUTION ZONE */
+        .exec-zone { border: 2px solid var(--neon); padding: 20px; text-align: center; margin-bottom: 20px; border-radius: 5px; background: rgba(57, 255, 20, 0.02); }
+        .btn-scan { background: var(--neon); color: black; border: none; padding: 10px 30px; font-weight: bold; cursor: pointer; font-size: 16px; }
+
+        /* DATA TABLES */
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { text-align: left; color: #888; border-bottom: 1px solid var(--border); padding: 10px; }
+        td { padding: 10px; border-bottom: 1px solid #222; }
+        .profit-plus { color: var(--neon); }
+        .profit-minus { color: var(--red); }
+
+        /* CUSTOM WIDGET IMG */
+        #mfb-widget-img { width: 100%; border-radius: 5px; opacity: 0.8; transition: 0.5s; }
+        #mfb-widget-img:hover { opacity: 1; }
+
+        .hidden { display: none; }
     </style>
 </head>
 <body>
 
-    <h1>NEYDRA</h1>
-    <div style="font-size: 10px; color: #555; margin-bottom: 30px;">QUANTITATIVE GOLD ANALYZER</div>
+    <div class="sidebar">
+        <div class="logo">NEYDRA</div>
+        <div class="menu-item active" onclick="switchTab('dashboard')">DASHBOARD</div>
+        <div class="menu-item" onclick="switchTab('trades')">OPEN TRADES</div>
+        <div class="menu-item" onclick="switchTab('history')">HISTORY</div>
+        <div class="menu-item" onclick="switchTab('sentiment')">SENTIMENT MAP</div>
+    </div>
 
-    <button id="scan-btn" onclick="startScan()">SCAN XAU/USD</button>
-    <div class="loader" id="loader"></div>
+    <div class="main">
+        
+        <div id="tab-dashboard">
+            <div class="top-bar">
+                <div class="card">
+                    <h3>NET GAIN (30D)</h3>
+                    <div class="val" id="val-gain">LOADING...</div>
+                </div>
+                <div class="card">
+                    <h3>XAUUSD SENTIMENT</h3>
+                    <div class="val" id="val-sent">LOADING...</div>
+                </div>
+                <div class="card">
+                    <h3>DAILY PROFIT</h3>
+                    <div class="val" id="val-daily">LOADING...</div>
+                </div>
+                <div class="card">
+                    <h3>NEYDRA STATUS</h3>
+                    <div class="val" style="color:var(--neon)">ONLINE</div>
+                </div>
+            </div>
 
-    <div id="result-area">
-        <div id="signal-text"></div>
-        <div class="details">
-            <div class="data-row"><span>CONFIDENCE:</span> <span id="conf-val"></span></div>
-            <div class="data-row"><span>ENTRY:</span> <span id="price-val"></span></div>
-            <div class="data-row"><span>LOT (14.37%):</span> <span id="lot-val"></span></div>
-            <div class="data-row"><span>TP / SL:</span> <span id="tpsl-val"></span></div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-top: 20px;">
+                <div class="exec-zone">
+                    <h2 style="margin-top:0">QUANTITATIVE SCALPING ENGINE</h2>
+                    <div id="scan-res" style="font-size: 24px; margin: 20px; min-height: 30px;">READY</div>
+                    <button class="btn-scan" onclick="scan()">SCAN MARKET (L2 DOM)</button>
+                    <button id="exec-btn" class="btn-scan" style="background:var(--red); color:white; display:none; margin-left:10px;" onclick="exec()">EXECUTE</button>
+                </div>
+
+                <div class="card" style="text-align: center;">
+                    <h3>LIVE PERFORMANCE WIDGET</h3>
+                    <img id="mfb-widget-img" src="" alt="Connecting to Myfxbook...">
+                </div>
+            </div>
         </div>
-        <button id="exec-btn" onclick="executeTrade()">EXECUTE NOW</button>
-        <div id="status-msg" style="margin-top:10px; font-size:10px;"></div>
+
+        <div id="tab-trades" class="hidden">
+            <h2>OPEN POSITIONS</h2>
+            <table id="table-trades">
+                <thead><tr><th>SYMBOL</th><th>ACTION</th><th>LOTS</th><th>OPEN PRICE</th><th>PROFIT</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="tab-history" class="hidden">
+            <h2>TRADE HISTORY</h2>
+            <table id="table-history">
+                <thead><tr><th>TIME</th><th>SYMBOL</th><th>ACTION</th><th>PROFIT</th><th>COMMENT</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="tab-sentiment" class="hidden">
+            <h2>COMMUNITY OUTLOOK BY COUNTRY</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;" id="country-grid">
+                </div>
+        </div>
+
     </div>
 
     <script>
         let currentSignal = {};
 
-        async function startScan() {
-            document.getElementById('scan-btn').style.display = 'none';
-            document.getElementById('result-area').style.display = 'none';
-            document.getElementById('loader').style.display = 'block';
-
-            // Simulate the 3-second Deep Analysis
-            setTimeout(async () => {
-                try {
-                    const response = await fetch('http://localhost:8000/scan');
-                    const data = await response.json();
-                    currentSignal = data;
-                    showResult(data);
-                } catch (error) {
-                    alert("NEYDRA SERVER OFFLINE");
-                    document.getElementById('loader').style.display = 'none';
-                    document.getElementById('scan-btn').style.display = 'block';
-                }
-            }, 3000); 
+        // TAB SWITCHING
+        function switchTab(tabName) {
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.getElementById('tab-dashboard').classList.add('hidden');
+            document.getElementById('tab-trades').classList.add('hidden');
+            document.getElementById('tab-history').classList.add('hidden');
+            document.getElementById('tab-sentiment').classList.add('hidden');
+            
+            document.getElementById('tab-' + tabName).classList.remove('hidden');
         }
 
-        function showResult(data) {
-            document.getElementById('loader').style.display = 'none';
-            const resArea = document.getElementById('result-area');
-            const sigText = document.getElementById('signal-text');
-            const execBtn = document.getElementById('exec-btn');
+        // LOAD DATA ON START
+        window.onload = async () => {
+            fetchMFBData();
+        };
 
-            resArea.style.display = 'block';
-            
-            if (data.action === "BUY") {
-                sigText.className = "signal-buy";
-                sigText.innerText = "BUY SIGNAL";
-                execBtn.style.backgroundColor = "var(--neon-green)";
-                execBtn.style.color = "black";
-            } else {
-                sigText.className = "signal-sell";
-                sigText.innerText = "SELL SIGNAL";
-                execBtn.style.backgroundColor = "var(--neon-red)";
-                execBtn.style.color = "white";
-            }
-
-            document.getElementById('conf-val').innerText = data.confidence + "%";
-            document.getElementById('price-val').innerText = data.entry_price;
-            document.getElementById('lot-val').innerText = data.lot_size;
-            document.getElementById('tpsl-val').innerText = "+" + data.tp + " / -" + data.sl + " pips";
-            
-            execBtn.style.display = 'block';
-        }
-
-        async function executeTrade() {
-            document.getElementById('status-msg').innerText = "SENDING ORDER TO MT5...";
-            const url = `http://localhost:8000/execute?action=${currentSignal.action}&lot=${currentSignal.lot_size}`;
-            
+        async function fetchMFBData() {
             try {
-                const response = await fetch(url, {method: 'POST'});
-                const res = await response.json();
-                if(res.status === "EXECUTED") {
-                    document.getElementById('status-msg').innerText = "SUCCESS: TICKET #" + res.ticket;
-                    document.getElementById('status-msg').style.color = "var(--neon-green)";
-                } else {
-                    document.getElementById('status-msg').innerText = "ERROR: " + res.error;
-                    document.getElementById('status-msg').style.color = "red";
+                const res = await fetch('http://localhost:8000/mfb-data');
+                const data = await res.json();
+
+                // 1. Dashboard Widgets
+                document.getElementById('val-gain').innerText = (data.gain_period || 0) + "%";
+                if(data.sentiment_global) {
+                    document.getElementById('val-sent').innerText = `SHORT: ${data.sentiment_global.shortPercentage}%`;
                 }
-            } catch (e) {
-                document.getElementById('status-msg').innerText = "CONNECTION FAILED";
+                
+                // Set Widget Image
+                if(data.widget_url) {
+                    document.getElementById('mfb-widget-img').src = data.widget_url;
+                }
+
+                // 2. Open Trades Table
+                const tradesBody = document.querySelector('#table-trades tbody');
+                tradesBody.innerHTML = "";
+                data.open_trades.forEach(t => {
+                    const color = t.profit >= 0 ? "profit-plus" : "profit-minus";
+                    tradesBody.innerHTML += `<tr><td>${t.symbol}</td><td>${t.action}</td><td>${t.sizing.value}</td><td>${t.openPrice}</td><td class="${color}">${t.profit}</td></tr>`;
+                });
+
+                // 3. History Table
+                const histBody = document.querySelector('#table-history tbody');
+                histBody.innerHTML = "";
+                data.history.slice(0, 10).forEach(h => { // Show last 10
+                    const color = h.profit >= 0 ? "profit-plus" : "profit-minus";
+                    histBody.innerHTML += `<tr><td>${h.closeTime}</td><td>${h.symbol}</td><td>${h.action}</td><td class="${color}">${h.profit}</td><td>${h.comment}</td></tr>`;
+                });
+
+                // 4. Sentiment Countries
+                const countryGrid = document.getElementById('country-grid');
+                countryGrid.innerHTML = "";
+                data.sentiment_country.forEach(c => {
+                    countryGrid.innerHTML += `<div class="card">
+                        <h3>${c.name}</h3>
+                        <div>Longs: ${c.longPositions}</div>
+                        <div style="color:var(--red)">Shorts: ${c.shortPositions}</div>
+                    </div>`;
+                });
+
+            } catch(e) { console.log("MFB Load Error", e); }
+        }
+
+        // SCALPING FUNCTIONS
+        async function scan() {
+            document.getElementById('scan-res').innerText = "ANALYZING...";
+            const res = await fetch('http://localhost:8000/scan');
+            const data = await res.json();
+            currentSignal = data;
+            
+            document.getElementById('scan-res').innerText = `${data.action} | CONF: ${data.confidence}%`;
+            document.getElementById('scan-res').style.color = data.action === "BUY" ? "var(--neon)" : (data.action === "SELL" ? "var(--red)" : "white");
+            
+            if(data.action !== "WAIT") {
+                const btn = document.getElementById('exec-btn');
+                btn.style.display = "inline-block";
+                btn.innerText = `EXEC ${data.action} (${data.lot_size})`;
             }
+        }
+
+        async function exec() {
+            const url = `http://localhost:8000/execute?action=${currentSignal.action}&lot=${currentSignal.lot_size}`;
+            await fetch(url);
+            alert("ORDER SENT");
+            location.reload();
         }
     </script>
 </body>
-
 </html>
